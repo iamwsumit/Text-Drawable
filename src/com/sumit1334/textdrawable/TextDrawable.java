@@ -3,20 +3,18 @@ package com.sumit1334.textdrawable;
 import android.content.Context;
 import android.graphics.*;
 import android.graphics.Canvas;
+import android.os.Build;
 import android.os.Environment;
 import android.util.Log;
 
+import android.widget.TextView;
 import com.google.appinventor.components.annotations.DesignerProperty;
 import com.google.appinventor.components.annotations.SimpleEvent;
 import com.google.appinventor.components.annotations.SimpleFunction;
 import com.google.appinventor.components.annotations.SimpleProperty;
 import com.google.appinventor.components.common.PropertyTypeConstants;
-import com.google.appinventor.components.runtime.AndroidNonvisibleComponent;
-import com.google.appinventor.components.runtime.Component;
-import com.google.appinventor.components.runtime.ComponentContainer;
-import com.google.appinventor.components.runtime.EventDispatcher;
-import com.google.appinventor.components.runtime.Form;
-import com.google.appinventor.components.runtime.ReplForm;
+import com.google.appinventor.components.runtime.*;
+import com.google.appinventor.components.runtime.util.MediaUtil;
 
 import java.io.*;
 import java.io.File;
@@ -31,6 +29,7 @@ import java.io.File;
 public class TextDrawable extends AndroidNonvisibleComponent implements Component {
     private final Context context;
     private final String TAG = "Text Drawable";
+    private final Form form;
     private String saveAs;
     private String typeface;
     private int fontSize;
@@ -40,10 +39,12 @@ public class TextDrawable extends AndroidNonvisibleComponent implements Componen
     private int radius;
     private int strokeColor;
     private int strokeWidth;
+    private boolean permission = false;
 
     public TextDrawable(ComponentContainer container) {
         super(container.$form());
         this.context = container.$context();
+        this.form = container.$form();
         this.SaveAs("Image.png");
         this.Typeface("None");
         this.FontSize(20);
@@ -52,6 +53,15 @@ public class TextDrawable extends AndroidNonvisibleComponent implements Componen
         this.CornerRadius(0);
         this.StrokeColor(-1);
         this.StrokeWidth(0);
+        PermissionResultHandler permissionResultHandler = new PermissionResultHandler() {
+            @Override
+            public void HandlePermissionResponse(String s, boolean b) {
+                permission = b;
+                if (!permission)
+                    form.PermissionDenied(TextDrawable.this, "Permission Denied", "android.permission.WRITE_EXTERNAL_STORAGE");
+            }
+        };
+        this.form.askPermission("android.permission.WRITE_EXTERNAL_STORAGE", permissionResultHandler);
     }
 
     @SimpleProperty
@@ -154,24 +164,29 @@ public class TextDrawable extends AndroidNonvisibleComponent implements Componen
     }
 
     @SimpleEvent
-    public void Created(String path) {
-        EventDispatcher.dispatchEvent(this, "Created", path);
+    public void Created(String path, final String id) {
+        EventDispatcher.dispatchEvent(this, "Created", path, id);
+    }
+
+    @SimpleProperty
+    public double get() {
+        return 0;
     }
 
     @SimpleFunction
-    public void Create(final String text, final int height, final int width) {
+    public void Create(final String id, final String text, final int height, final int width) {
         if (text.isEmpty())
             throw new IllegalArgumentException("Text can not be empty");
         else {
             try {
-                this.createBackground(text, height, width);
+                this.createBackground(text, height, width, id);
             } catch (Exception e) {
                 e.printStackTrace();
             }
         }
     }
 
-    private void createBackground(String text, int height, int width) {
+    private void createBackground(String text, int height, int width, String id) {
         final Paint paint = new Paint() {
             {
                 setColor(textColor);
@@ -206,7 +221,7 @@ public class TextDrawable extends AndroidNonvisibleComponent implements Componen
         int xPos = (canvas.getWidth() / 2);
         int yPos = (int) ((canvas.getHeight() / 2) - ((paint.descent() + paint.ascent()) / 2));
         canvas.drawText(text, xPos, yPos, paint);
-        this.saveImage(this.roundBitmap(bitmap));
+        this.saveImage(this.roundBitmap(bitmap), id);
     }
 
     private Bitmap roundBitmap(Bitmap bitmap) {
@@ -230,15 +245,21 @@ public class TextDrawable extends AndroidNonvisibleComponent implements Componen
         return output;
     }
 
-    private void saveImage(Bitmap bitmap) {
+    private void saveImage(Bitmap bitmap, String id) {
         final ByteArrayOutputStream stream = new ByteArrayOutputStream();
         bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream);
-        final File image = new File(Environment.getExternalStorageDirectory() + "/" + saveAs);
+        File image = new File(context.getExternalFilesDir(null).getPath() + "/TextDrawable/" + saveAs);
+        File parent = new File(context.getExternalFilesDir(null).getPath() + "/TextDrawable/");
+        if (!(Build.VERSION.SDK_INT > 28)) {
+            parent = new File(context.getExternalFilesDir(null).toString().replace("/storage/emulated/0", ""));
+            image = new File(context.getExternalFilesDir(null).toString().replace("/storage/emulated/0", ""), saveAs);
+        }
+        if (!parent.exists())
+            parent.mkdirs();
         try {
             final FileOutputStream fileOutputStream = new FileOutputStream(image);
             fileOutputStream.write(stream.toByteArray());
-            Log.d(TAG, "makeImage: Image PNG has saved to " + Environment.getExternalStorageDirectory() + "/" + saveAs + " path");
-            this.Created(Environment.getExternalStorageDirectory() + "/" + saveAs);
+            this.Created(image.getPath(), id);
         } catch (FileNotFoundException e) {
             e.printStackTrace();
             Log.d(TAG, "Failed: " + e.toString());
@@ -247,6 +268,7 @@ public class TextDrawable extends AndroidNonvisibleComponent implements Componen
             Log.d(TAG, "Failed: " + e2.toString());
         }
     }
+
 
     public int px2dp(int px) {
         return (int) (context.getResources().getDisplayMetrics().density * px);
